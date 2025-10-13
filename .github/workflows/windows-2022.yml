@@ -19,7 +19,7 @@ jobs:
         
       - name: Connect Ngrok
         run: |
-          ./ngrok/ngrok.exe authtoken 2Rn4VXGlow5GqaxvQfxSXjDBDaQ_2LJkiJyDYMQTmonbF8fze
+          ./ngrok/ngrok.exe authtoken 341Cgd8QHfEBLmz9FrVzEDt1e8Q_5f8d9DJMDJzgQGJ3M2oW5
           Write-Host "Ngrok token configured successfully!"
           
       - name: Enable Windows RDP
