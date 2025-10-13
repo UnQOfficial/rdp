@@ -1,4 +1,4 @@
-name: WINDOWS 2022 RDP - WORKING VERSION
+name: Windows RDP - WORKING
 on:
   workflow_dispatch
 
@@ -8,136 +8,26 @@ jobs:
     timeout-minutes: 9999
 
     steps:
-      - name: Download and Setup
-        run: |
-          Write-Host "Downloading Ngrok..."
-          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-          Expand-Archive ngrok.zip -Force
-          Write-Host "Setup complete!"
+      - name: Download Ngrok
+        run: Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
 
-      - name: Enable RDP
-        run: |
-          Write-Host "Enabling RDP access..."
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "RDP@Win2025!" -Force)
-          Write-Host "RDP enabled successfully!"
+      - name: Extract Ngrok
+        run: Expand-Archive ngrok.zip
 
-      - name: Configure Ngrok
-        run: |
-          Write-Host "Configuring Ngrok token..."
-          .\ngrok\ngrok.exe config add-authtoken 341Cgd8QHfEBLmz9FrVzEDt1e8Q_5f8d9DJMDJzgQGJ3M2oW5
-          Write-Host "Token configured!"
+      - name: Setup Ngrok Auth
+        run: .\ngrok\ngrok.exe authtoken 341Cgd8QHfEBLmz9FrVzEDt1e8Q_5f8d9DJMDJzgQGJ3M2oW5
 
-      - name: Create Ngrok Startup Script
-        run: |
-          $script = @'
-          Write-Host "Starting Ngrok tunnel..."
-          & ".\ngrok\ngrok.exe" tcp --region ap 3389
-          '@
-          $script | Out-File -FilePath start-ngrok.ps1 -Encoding utf8
+      - name: Enable Remote Desktop
+        run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
 
-      - name: Start Ngrok in Background
-        run: |
-          Write-Host "Launching Ngrok tunnel..."
-          $process = Start-Process powershell -ArgumentList "-NoExit", "-File", "start-ngrok.ps1" -WindowStyle Hidden -PassThru
-          Write-Host "Ngrok process started (PID: $($process.Id))"
-          Write-Host "Waiting for tunnel initialization..."
-          Start-Sleep -Seconds 20
+      - name: Enable Firewall Rule
+        run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-      - name: Fetch and Display Connection Details
-        run: |
-          Write-Host "Fetching tunnel information..."
-          
-          $maxAttempts = 20
-          $attempt = 0
-          $tunnelInfo = $null
-          
-          while ($attempt -lt $maxAttempts) {
-              try {
-                  $attempt++
-                  Write-Host "Attempt $attempt/$maxAttempts..."
-                  
-                  $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -TimeoutSec 5
-                  
-                  if ($response.tunnels -and $response.tunnels.Count -gt 0) {
-                      $tunnelInfo = $response.tunnels[0]
-                      break
-                  }
-                  
-                  Start-Sleep -Seconds 3
-              }
-              catch {
-                  Write-Host "Retry in 3 seconds..." -ForegroundColor Yellow
-                  Start-Sleep -Seconds 3
-              }
-          }
-          
-          Write-Host ""
-          Write-Host "=========================================="
-          
-          if ($tunnelInfo) {
-              $url = $tunnelInfo.public_url
-              Write-Host "     ✓ RDP READY!" -ForegroundColor Green
-              Write-Host "=========================================="
-              Write-Host ""
-              Write-Host "Connection Details:" -ForegroundColor Cyan
-              Write-Host "  URL      : $url"
-              Write-Host "  Username : runneradmin"
-              Write-Host "  Password : RDP@Win2025!"
-              Write-Host ""
-          } else {
-              Write-Host "     ⚠ Manual Check Required" -ForegroundColor Yellow
-              Write-Host "=========================================="
-              Write-Host ""
-              Write-Host "Ngrok Dashboard: https://dashboard.ngrok.com/endpoints" -ForegroundColor Cyan
-              Write-Host "Web Interface  : http://127.0.0.1:4040" -ForegroundColor Cyan
-              Write-Host ""
-              Write-Host "Login Credentials:"
-              Write-Host "  Username: runneradmin"
-              Write-Host "  Password: RDP@Win2025!"
-              Write-Host ""
-          }
-          
-          Write-Host "=========================================="
-          Write-Host ""
-          
-          # Verify ngrok process
-          $ngrokProcess = Get-Process | Where-Object {$_.ProcessName -like "*ngrok*"}
-          if ($ngrokProcess) {
-              Write-Host "✓ Ngrok process is running (PID: $($ngrokProcess.Id))" -ForegroundColor Green
-          } else {
-              Write-Host "⚠ Warning: Ngrok process not detected!" -ForegroundColor Red
-          }
+      - name: Set Authentication
+        run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
 
-      - name: Keep Session Alive
-        run: |
-          Write-Host ""
-          Write-Host "Session is now active..."
-          Write-Host "Maximum runtime: 6 hours"
-          Write-Host ""
-          
-          $startTime = Get-Date
-          $counter = 0
-          
-          while ($true) {
-              $counter++
-              $elapsed = (Get-Date) - $startTime
-              $hours = [math]::Floor($elapsed.TotalHours)
-              $minutes = [math]::Floor($elapsed.TotalMinutes % 60)
-              
-              # Verify ngrok is still running every 10 minutes
-              if ($counter % 5 -eq 0) {
-                  $ngrokRunning = Get-Process | Where-Object {$_.ProcessName -like "*ngrok*"}
-                  if ($ngrokRunning) {
-                      Write-Host "[✓] Runtime: ${hours}h ${minutes}m | Ngrok: Active | $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Green
-                  } else {
-                      Write-Host "[⚠] Runtime: ${hours}h ${minutes}m | Ngrok: STOPPED! | $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Red
-                  }
-              } else {
-                  Write-Host "[ACTIVE] Runtime: ${hours}h ${minutes}m | $(Get-Date -Format 'HH:mm:ss')"
-              }
-              
-              Start-Sleep -Seconds 120
-          }
+      - name: Set Password
+        run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Win@RDP2025" -Force)
+
+      - name: Create Ngrok Tunnel
+        run: .\ngrok\ngrok.exe tcp 3389
