@@ -1,0 +1,127 @@
+name: WINDOWS 2022 RDP - FIXED VERSION
+on:
+  workflow_dispatch
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 9999
+    
+    steps:
+      - name: Download and Extract Ngrok
+        run: |
+          Write-Host "Downloading Ngrok..."
+          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+          Expand-Archive ngrok.zip -DestinationPath ngrok-extracted
+          Write-Host "Ngrok downloaded successfully!"
+          
+      - name: Configure Ngrok Authentication
+        run: |
+          Write-Host "Configuring Ngrok token..."
+          .\ngrok-extracted\ngrok.exe config add-authtoken 341Cgd8QHfEBLmz9FrVzEDt1e8Q_5f8d9DJMDJzgQGJ3M2oW5
+          Write-Host "Token configured successfully!"
+          
+      - name: Setup RDP and User Account
+        run: |
+          Write-Host "Enabling Remote Desktop..."
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+          
+          Write-Host "Creating user 'sandeep'..."
+          try {
+              New-LocalUser -Name "sandeep" -Password (ConvertTo-SecureString -AsPlainText "sandeep" -Force) -FullName "Sandeep" -Description "RDP User" -ErrorAction Stop
+              Add-LocalGroupMember -Group "Administrators" -Member "sandeep" -ErrorAction Stop
+              Write-Host "User 'sandeep' created and added to Administrators!"
+          } catch {
+              Write-Host "User might already exist, updating password..."
+              Set-LocalUser -Name "sandeep" -Password (ConvertTo-SecureString -AsPlainText "sandeep" -Force)
+              Write-Host "Password updated for user 'sandeep'!"
+          }
+          
+          Write-Host "RDP Setup Complete!"
+          
+      - name: Start Ngrok Tunnel in Background
+        run: |
+          Write-Host "Starting Ngrok tunnel..."
+          Start-Job -ScriptBlock { 
+              Set-Location $using:PWD
+              .\ngrok-extracted\ngrok.exe tcp --region ap 3389 
+          } | Out-Null
+          Write-Host "Ngrok tunnel started in background!"
+          Write-Host "Waiting for tunnel to establish..."
+          Start-Sleep -Seconds 12
+          
+      - name: Retrieve and Display Connection Details
+        run: |
+          Write-Host "Fetching connection details..."
+          $maxRetries = 12
+          $retryCount = 0
+          $tunnelUrl = $null
+          $success = $false
+          
+          while ($retryCount -lt $maxRetries -and -not $success) {
+              try {
+                  Start-Sleep -Seconds 3
+                  $response = Invoke-RestMethod -Uri http://127.0.0.1:4040/api/tunnels -ErrorAction Stop
+                  
+                  if ($response.tunnels -and $response.tunnels.Count -gt 0) {
+                      $tunnelUrl = $response.tunnels[0].public_url
+                      $success = $true
+                      break
+                  }
+              } catch {
+                  Write-Host "Attempt $($retryCount + 1)/$maxRetries - Waiting for ngrok API..."
+              }
+              $retryCount++
+          }
+          
+          Write-Host ""
+          Write-Host "=========================================="
+          Write-Host "         RDP CONNECTION READY!          "
+          Write-Host "=========================================="
+          
+          if ($tunnelUrl) {
+              $tunnelUrl = $tunnelUrl -replace "tcp://", ""
+              Write-Host "CONNECTION URL : $tunnelUrl"
+          } else {
+              Write-Host "CONNECTION URL : Check ngrok dashboard"
+              Write-Host "Dashboard Link : https://dashboard.ngrok.com/endpoints"
+          }
+          
+          Write-Host "USERNAME       : sandeep"
+          Write-Host "PASSWORD       : sandeep"
+          Write-Host ""
+          Write-Host "Web Interface  : http://127.0.0.1:4040"
+          Write-Host "=========================================="
+          Write-Host ""
+          Write-Host "How to Connect:"
+          Write-Host "1. Copy the CONNECTION URL above"
+          Write-Host "2. Open Remote Desktop Connection (mstsc)"
+          Write-Host "3. Paste the URL (format: hostname:port)"
+          Write-Host "4. Login with username and password"
+          Write-Host "=========================================="
+          
+      - name: Keep Session Active
+        run: |
+          Write-Host ""
+          Write-Host "Session is now ACTIVE and RUNNING!"
+          Write-Host "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+          Write-Host ""
+          Write-Host "This session will stay active for GitHub Actions timeout limit."
+          Write-Host "To stop: Cancel the workflow from GitHub Actions page."
+          Write-Host ""
+          
+          $counter = 1
+          while ($true) {
+              Start-Sleep -Seconds 60
+              Write-Host "[$counter] Active - $(Get-Date -Format 'HH:mm:ss') - Session Running..."
+              $counter++
+              
+              # Every 5 minutes, show connection reminder
+              if ($counter % 5 -eq 0) {
+                  Write-Host "---"
+                  Write-Host "Still connected! Check https://dashboard.ngrok.com/endpoints for URL"
+                  Write-Host "---"
+              }
+          }
