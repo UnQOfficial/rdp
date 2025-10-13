@@ -1,4 +1,4 @@
-name: Windows RDP - WORKING
+name: Windows RDP - Playit Ready
 on:
   workflow_dispatch
 
@@ -8,26 +8,78 @@ jobs:
     timeout-minutes: 9999
 
     steps:
-      - name: Download Ngrok
-        run: Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-
-      - name: Extract Ngrok
-        run: Expand-Archive ngrok.zip
-
-      - name: Setup Ngrok Auth
-        run: .\ngrok\ngrok.exe authtoken 341Cgd8QHfEBLmz9FrVzEDt1e8Q_5f8d9DJMDJzgQGJ3M2oW5
+      - name: Download Playit Agent
+        run: |
+          Write-Host "Downloading Playit..."
+          Invoke-WebRequest "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-x86_64.exe" -OutFile "playit.exe"
+          Write-Host "Download complete!"
 
       - name: Enable Remote Desktop
-        run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        run: |
+          Write-Host "Enabling RDP..."
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Playit@RDP2025" -Force)
+          Write-Host "RDP enabled successfully!"
 
-      - name: Enable Firewall Rule
-        run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+      - name: Create Secret File
+        run: |
+          Write-Host "Creating secret file..."
+          "7aefd6df66b5f4b74f324a16af489939fda60f8807f0d207332c4048c64468f3" | Out-File -FilePath "secret.txt" -Encoding ASCII -NoNewline
+          Write-Host "Secret file created!"
 
-      - name: Set Authentication
-        run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+      - name: Start Playit Tunnel
+        run: |
+          Write-Host "Starting Playit agent..."
+          Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret-path", "secret.txt" -NoNewWindow
+          Start-Sleep -Seconds 15
+          Write-Host "Playit agent started successfully!"
 
-      - name: Set Password
-        run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Win@RDP2025" -Force)
+      - name: Display Connection Details
+        run: |
+          Write-Host ""
+          Write-Host "=============================================" -ForegroundColor Cyan
+          Write-Host "     ✓ RDP SERVER IS READY!" -ForegroundColor Green
+          Write-Host "=============================================" -ForegroundColor Cyan
+          Write-Host ""
+          Write-Host "Get your connection details from:" -ForegroundColor Yellow
+          Write-Host "https://playit.gg/account/tunnels" -ForegroundColor Cyan
+          Write-Host ""
+          Write-Host "Login Credentials:" -ForegroundColor Yellow
+          Write-Host "  Username: runneradmin" -ForegroundColor White
+          Write-Host "  Password: Playit@RDP2025" -ForegroundColor White
+          Write-Host ""
+          Write-Host "=============================================" -ForegroundColor Cyan
+          Write-Host "How to Connect:" -ForegroundColor Yellow
+          Write-Host "  1. Open the Playit dashboard link above" -ForegroundColor White
+          Write-Host "  2. Copy the Public Address (e.g., 123.ip.ply.gg:12345)" -ForegroundColor White
+          Write-Host "  3. Open Remote Desktop (Win+R → mstsc)" -ForegroundColor White
+          Write-Host "  4. Enter the Public Address" -ForegroundColor White
+          Write-Host "  5. Login with credentials shown above" -ForegroundColor White
+          Write-Host "=============================================" -ForegroundColor Cyan
+          Write-Host ""
 
-      - name: Create Ngrok Tunnel
-        run: .\ngrok\ngrok.exe tcp 3389
+      - name: Keep Session Active
+        run: |
+          Write-Host "Session is now running..."
+          Write-Host "Workflow will stay active for up to 6 hours."
+          Write-Host ""
+          
+          $startTime = Get-Date
+          $counter = 0
+          
+          while ($true) {
+              $counter++
+              $elapsed = (Get-Date) - $startTime
+              $hours = [math]::Floor($elapsed.TotalHours)
+              $minutes = [math]::Floor($elapsed.TotalMinutes % 60)
+              
+              if ($counter % 5 -eq 0) {
+                  Write-Host "[✓ ACTIVE] Runtime: ${hours}h ${minutes}m | $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Green
+              } else {
+                  Write-Host "[RUNNING] Runtime: ${hours}h ${minutes}m | $(Get-Date -Format 'HH:mm:ss')"
+              }
+              
+              Start-Sleep -Seconds 120
+          }
