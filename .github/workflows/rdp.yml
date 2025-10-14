@@ -1,0 +1,34 @@
+name: Windows RDP - Cloudflare Tunnel
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 9999
+
+    steps:
+    - name: Setup cloudflared
+      uses: AnimMouse/setup-cloudflared@v2
+
+    - name: Enable Remote Desktop
+      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+
+    - name: Enable Firewall Rule for RDP
+      run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
+    - name: Set User Authentication
+      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+
+    - name: Set Administrator Password
+      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd123!" -Force)
+
+    - name: Start Cloudflare Tunnel for RDP
+      run: |
+        Write-Host "Starting Cloudflare Tunnel for RDP..."
+        Write-Host "Tunnel URL will appear below:"
+        cloudflared tunnel --url tcp://localhost:3389
+
+    - name: Keep Session Alive
+      if: '! cancelled()'
+      run: Start-Sleep -Seconds 21600
