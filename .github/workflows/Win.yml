@@ -1,85 +1,34 @@
-name: Windows RDP - Playit Ready
-on:
-  workflow_dispatch
+name: Windows RDP - Cloudflare Tunnel
+
+on: [push, workflow_dispatch]
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-latest
     timeout-minutes: 9999
 
     steps:
-      - name: Download Playit Agent
-        run: |
-          Write-Host "Downloading Playit..."
-          Invoke-WebRequest "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-x86_64.exe" -OutFile "playit.exe"
-          Write-Host "Download complete!"
+    - name: Setup cloudflared
+      uses: AnimMouse/setup-cloudflared@v2
 
-      - name: Enable Remote Desktop
-        run: |
-          Write-Host "Enabling RDP..."
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Playit@RDP2025" -Force)
-          Write-Host "RDP enabled successfully!"
+    - name: Enable Remote Desktop
+      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
 
-      - name: Create Secret File
-        run: |
-          Write-Host "Creating secret file..."
-          "7aefd6df66b5f4b74f324a16af489939fda60f8807f0d207332c4048c64468f3" | Out-File -FilePath "secret.txt" -Encoding ASCII -NoNewline
-          Write-Host "Secret file created!"
+    - name: Enable Firewall Rule for RDP
+      run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-      - name: Start Playit Tunnel
-        run: |
-          Write-Host "Starting Playit agent..."
-          Start-Process -FilePath ".\playit.exe" -ArgumentList "--secret-path", "secret.txt" -NoNewWindow
-          Start-Sleep -Seconds 15
-          Write-Host "Playit agent started successfully!"
+    - name: Set User Authentication
+      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
 
-      - name: Display Connection Details
-        run: |
-          Write-Host ""
-          Write-Host "=============================================" -ForegroundColor Cyan
-          Write-Host "     ✓ RDP SERVER IS READY!" -ForegroundColor Green
-          Write-Host "=============================================" -ForegroundColor Cyan
-          Write-Host ""
-          Write-Host "Get your connection details from:" -ForegroundColor Yellow
-          Write-Host "https://playit.gg/account/tunnels" -ForegroundColor Cyan
-          Write-Host ""
-          Write-Host "Login Credentials:" -ForegroundColor Yellow
-          Write-Host "  Username: runneradmin" -ForegroundColor White
-          Write-Host "  Password: Playit@RDP2025" -ForegroundColor White
-          Write-Host ""
-          Write-Host "=============================================" -ForegroundColor Cyan
-          Write-Host "How to Connect:" -ForegroundColor Yellow
-          Write-Host "  1. Open the Playit dashboard link above" -ForegroundColor White
-          Write-Host "  2. Copy the Public Address (e.g., 123.ip.ply.gg:12345)" -ForegroundColor White
-          Write-Host "  3. Open Remote Desktop (Win+R → mstsc)" -ForegroundColor White
-          Write-Host "  4. Enter the Public Address" -ForegroundColor White
-          Write-Host "  5. Login with credentials shown above" -ForegroundColor White
-          Write-Host "=============================================" -ForegroundColor Cyan
-          Write-Host ""
+    - name: Set Administrator Password
+      run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd123!" -Force)
 
-      - name: Keep Session Active
-        run: |
-          Write-Host "Session is now running..."
-          Write-Host "Workflow will stay active for up to 6 hours."
-          Write-Host ""
-          
-          $startTime = Get-Date
-          $counter = 0
-          
-          while ($true) {
-              $counter++
-              $elapsed = (Get-Date) - $startTime
-              $hours = [math]::Floor($elapsed.TotalHours)
-              $minutes = [math]::Floor($elapsed.TotalMinutes % 60)
-              
-              if ($counter % 5 -eq 0) {
-                  Write-Host "[✓ ACTIVE] Runtime: ${hours}h ${minutes}m | $(Get-Date -Format 'HH:mm:ss')" -ForegroundColor Green
-              } else {
-                  Write-Host "[RUNNING] Runtime: ${hours}h ${minutes}m | $(Get-Date -Format 'HH:mm:ss')"
-              }
-              
-              Start-Sleep -Seconds 120
-          }
+    - name: Start Cloudflare Tunnel for RDP
+      run: |
+        Write-Host "Starting Cloudflare Tunnel for RDP..."
+        Write-Host "Tunnel URL will appear below:"
+        cloudflared tunnel --url tcp://localhost:3389
+
+    - name: Keep Session Alive
+      if: '! cancelled()'
+      run: Start-Sleep -Seconds 21600
